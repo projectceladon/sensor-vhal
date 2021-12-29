@@ -56,6 +56,7 @@ SensorDevice::SensorDevice() {
     else
         mConnType = SOCK_CONN_TYPE_UNIX_SOCK;
 
+    m_is_concurrent_user = property_get_bool(CONCURRENT_USER_PROP, false);
     m_socket_server = new SockServer(virtual_sensor_port, mConnType);
     m_socket_server->register_listener_callback(std::bind(&SensorDevice::sensor_event_callback, this, _1, _2));
     m_socket_server->register_connected_callback(std::bind(&SensorDevice::client_connected_callback, this, _1, _2));
@@ -114,17 +115,37 @@ int64_t SensorDevice::now_ns(void) {
     return (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 }
 
-int SensorDevice::sensor_device_send_config_msg(const void* cmd, size_t len) {
-    sock_client_proxy_t* client = m_socket_server->get_sock_client();
-    if (!client) {
-        ALOGE("sensor client has not connected, wait...");
-        return 0;  // set 0 as success. or SensorService may crash
+int SensorDevice::sensor_device_send_config_msg(const void* cmd, size_t len, int32_t userId) {
+    sock_client_proxy_t** clients = m_socket_server->get_connected_clients();
+    int ret = 0;
+
+    if (m_is_concurrent_user) {
+        for (int i = 0; i < MAX_CLIENTS; i++) {
+            if (clients[i]) {
+                if (clients[i]->userId == userId) {
+                    ret = m_socket_server->send_data(clients[i], cmd, len);
+                    if (ret < 0) {
+                        ret = -errno;
+                        ALOGE("%s: ERROR: %s", __FUNCTION__, strerror(errno));
+                    }
+                    break;
+                }
+            }
+        }
+    } else {
+        sock_client_proxy_t* client = m_socket_server->get_sock_client();
+        if (!client) {
+            ALOGE("sensor client has not connected, wait...");
+            return 0;  // set 0 as success. or SensorService may crash
+        }
+
+        ret = m_socket_server->send_data(client, cmd, len);
+        if (ret < 0) {
+            ret = -errno;
+            ALOGE("%s: ERROR: %s", __FUNCTION__, strerror(errno));
+         }
     }
-    int ret = m_socket_server->send_data(client, cmd, len);
-    if (ret < 0) {
-        ret = -errno;
-        ALOGE("%s: ERROR: %s", __FUNCTION__, strerror(errno));
-    }
+
     return ret;
 }
 
@@ -218,6 +239,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
                 events[ID_ACCELEROMETER].acceleration.z = new_sensor_events_ptr->data.fdata[2];
                 events[ID_ACCELEROMETER].timestamp      = new_sensor_events_ptr->timestamp;
                 events[ID_ACCELEROMETER].type           = SENSOR_TYPE_ACCELEROMETER;
+                events[ID_ACCELEROMETER].reserved0      = new_sensor_events_ptr->userId;
                 break;
 
             case SENSOR_TYPE_GYROSCOPE:
@@ -227,6 +249,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
                 events[ID_GYROSCOPE].gyro.z    = new_sensor_events_ptr->data.fdata[2];
                 events[ID_GYROSCOPE].timestamp = new_sensor_events_ptr->timestamp;
                 events[ID_GYROSCOPE].type      = SENSOR_TYPE_GYROSCOPE;
+                events[ID_GYROSCOPE].reserved0 = new_sensor_events_ptr->userId;
                 break;
 
             case SENSOR_TYPE_MAGNETIC_FIELD:
@@ -236,6 +259,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
                 events[ID_MAGNETIC_FIELD].magnetic.z = new_sensor_events_ptr->data.fdata[2];
                 events[ID_MAGNETIC_FIELD].timestamp  = new_sensor_events_ptr->timestamp;
                 events[ID_MAGNETIC_FIELD].type       = SENSOR_TYPE_MAGNETIC_FIELD;
+                events[ID_MAGNETIC_FIELD].reserved0 = new_sensor_events_ptr->userId;
                 break;
 
             case SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED:
@@ -244,6 +268,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
                                         new_sensor_events_ptr->data.fdata, payload_len);
                 events[ID_ACCELEROMETER_UNCALIBRATED].timestamp = new_sensor_events_ptr->timestamp;
                 events[ID_ACCELEROMETER_UNCALIBRATED].type      = SENSOR_TYPE_ACCELEROMETER_UNCALIBRATED;
+                events[ID_ACCELEROMETER_UNCALIBRATED].reserved0 = new_sensor_events_ptr->userId;
                 break;
 
             case SENSOR_TYPE_GYROSCOPE_UNCALIBRATED:
@@ -252,6 +277,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
                             new_sensor_events_ptr->data.fdata, payload_len);
                 events[ID_GYROSCOPE_UNCALIBRATED].timestamp = new_sensor_events_ptr->timestamp;
                 events[ID_GYROSCOPE_UNCALIBRATED].type      = SENSOR_TYPE_GYROSCOPE_UNCALIBRATED;
+                events[ID_GYROSCOPE_UNCALIBRATED].reserved0 = new_sensor_events_ptr->userId;
                 break;
 
             case SENSOR_TYPE_MAGNETIC_FIELD_UNCALIBRATED:
@@ -260,6 +286,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
                         new_sensor_events_ptr->data.fdata, payload_len);
                 events[ID_MAGNETIC_FIELD_UNCALIBRATED].timestamp = new_sensor_events_ptr->timestamp;
                 events[ID_MAGNETIC_FIELD_UNCALIBRATED].type      = SENSOR_TYPE_MAGNETIC_FIELD_UNCALIBRATED;
+                events[ID_MAGNETIC_FIELD_UNCALIBRATED].reserved0 = new_sensor_events_ptr->userId;
                 break;
 
             case SENSOR_TYPE_LIGHT:
@@ -267,6 +294,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
                 events[ID_LIGHT].light = new_sensor_events_ptr->data.fdata[0];
                 events[ID_LIGHT].timestamp = new_sensor_events_ptr->timestamp;
                 events[ID_LIGHT].type      = SENSOR_TYPE_LIGHT;
+                events[ID_LIGHT].reserved0 = new_sensor_events_ptr->userId;
                 break;
 
             case SENSOR_TYPE_PROXIMITY:
@@ -274,6 +302,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
                 events[ID_PROXIMITY].distance = new_sensor_events_ptr->data.fdata[0];
                 events[ID_PROXIMITY].timestamp = new_sensor_events_ptr->timestamp;
                 events[ID_PROXIMITY].type      = SENSOR_TYPE_PROXIMITY;
+                events[ID_PROXIMITY].reserved0 = new_sensor_events_ptr->userId;
                 break;
 
             case SENSOR_TYPE_AMBIENT_TEMPERATURE:
@@ -281,6 +310,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
                 events[ID_TEMPERATURE].temperature = new_sensor_events_ptr->data.fdata[0];
                 events[ID_TEMPERATURE].timestamp = new_sensor_events_ptr->timestamp;
                 events[ID_TEMPERATURE].type      = SENSOR_TYPE_AMBIENT_TEMPERATURE;
+                events[ID_TEMPERATURE].reserved0 = new_sensor_events_ptr->userId;
                 break;
 
             default:
@@ -415,6 +445,8 @@ out:
 }
 
 int SensorDevice::sensor_device_activate(int handle, int enabled) {
+    int userId = GET_USERID_FROM_HANDLE(handle);
+    handle = GET_ACTUAL_HANDLE(handle);
     int id = get_type_from_hanle(handle);
     if (id < 0) {
         ALOGE("unknown handle(%d)", handle);
@@ -426,7 +458,7 @@ int SensorDevice::sensor_device_activate(int handle, int enabled) {
     m_sensor_config_status[handle].enabled     = enabled;
     ALOGI("activate: sensor type=%d, enabled=%d, handle=%s(%d)", id, enabled, get_name_from_handle(handle), handle);
     if (!enabled) {
-        int ret = sensor_device_send_config_msg(&m_sensor_config_status[handle], sizeof(sensor_config_msg_t));
+        int ret = sensor_device_send_config_msg(&m_sensor_config_status[handle], sizeof(sensor_config_msg_t), userId);
         if (ret < 0) {
             ALOGE("could not send activate command: %s", strerror(-ret));
             m_mutex.unlock();
@@ -438,6 +470,8 @@ int SensorDevice::sensor_device_activate(int handle, int enabled) {
 }
 
 int SensorDevice::sensor_device_batch(int handle, int64_t sampling_period_ns) {
+    int userId = GET_USERID_FROM_HANDLE(handle);
+    handle = GET_ACTUAL_HANDLE(handle);
     int sensor_type = get_type_from_hanle(handle);
     if (sensor_type < 0) {
         ALOGE("unknown handle (%d)", handle);
@@ -451,7 +485,7 @@ int SensorDevice::sensor_device_batch(int handle, int64_t sampling_period_ns) {
     m_sensor_config_status[handle].sample_period = sampling_period_ms;
 
     ALOGI("batch: sensor type=%d, sample_period=%dms, handle=%s(%d)", sensor_type, sampling_period_ms, get_name_from_handle(handle), handle);
-    int ret = sensor_device_send_config_msg(&m_sensor_config_status[handle], sizeof(sensor_config_msg_t));
+    int ret = sensor_device_send_config_msg(&m_sensor_config_status[handle], sizeof(sensor_config_msg_t), userId);
     m_mutex.unlock();
 
     if (ret < 0) {
@@ -462,6 +496,8 @@ int SensorDevice::sensor_device_batch(int handle, int64_t sampling_period_ns) {
 }
 
 int SensorDevice::sensor_device_set_delay(int handle, int64_t ns) {
+    int userId = GET_USERID_FROM_HANDLE(handle);
+    handle = GET_ACTUAL_HANDLE(handle);
     int sensor_type = get_type_from_hanle(handle);
     if (sensor_type < 0) {
         ALOGE("unknown handle (%d)", handle);
@@ -475,7 +511,7 @@ int SensorDevice::sensor_device_set_delay(int handle, int64_t ns) {
     m_sensor_config_status[handle].sample_period = sampling_period_ms;
 
     ALOGI("set_delay: sensor type=%d, sample_period=%dms, handle=%s(%d)", sensor_type, sampling_period_ms, get_name_from_handle(handle), handle);
-    int ret = sensor_device_send_config_msg(&m_sensor_config_status[handle], sizeof(sensor_config_msg_t));
+    int ret = sensor_device_send_config_msg(&m_sensor_config_status[handle], sizeof(sensor_config_msg_t), userId);
     m_mutex.unlock();
 
     if (ret < 0) {
@@ -486,6 +522,7 @@ int SensorDevice::sensor_device_set_delay(int handle, int64_t ns) {
 }
 
 int SensorDevice::sensor_device_flush(int handle) {
+    handle = GET_ACTUAL_HANDLE(handle);
     m_mutex.lock();
     if ((m_pending_sensors & (1U << handle)) && m_sensors[handle].type == SENSOR_TYPE_META_DATA) {
         (m_flush_count[handle])++;
@@ -543,12 +580,27 @@ int SensorDevice::get_handle_from_type(int sensor_type) {
 
 void SensorDevice::sensor_event_callback(SockServer* sock, sock_client_proxy_t* client) {
     aic_sensors_event_t sensor_events_header;
-    int len = m_socket_server->recv_data(client, &sensor_events_header, sizeof(aic_sensors_event_t), SOCK_BLOCK_MODE);
+    int len = m_socket_server->recv_data(client, &sensor_events_header, AIC_SENSOR_HEADER_EVENT_SIZE, SOCK_BLOCK_MODE);
 
     if (len <= 0) {
         ALOGE("sensors vhal receive sensor header message failed: %s ", strerror(errno));
         return;
     }
+
+    if (sensor_events_header.type == SENSOR_TYPE_ADDITIONAL_INFO) {
+        if (!m_is_concurrent_user) return;
+        client->userId = GET_USERID(sensor_events_header.data_num);
+        ALOGE("sensor vhal client user-id %d", client->userId);
+        for (int i = 0; i < MAX_NUM_SENSORS; i++) {
+            m_mutex.lock();
+            sensor_device_send_config_msg(m_sensor_config_status + i, sizeof(sensor_config_msg_t),
+                                                                                client->userId);
+            m_mutex.unlock();
+        }
+        return;
+    }
+
+    sensor_events_header.userId = client->userId;
     int payload_len = get_payload_len(sensor_events_header.type);
     if (payload_len == 0) {
         return;
@@ -591,9 +643,12 @@ void SensorDevice::sensor_event_callback(SockServer* sock, sock_client_proxy_t* 
 
 void SensorDevice::client_connected_callback(SockServer* sock, sock_client_proxy_t* client) {
     ALOGD("sensor client connected to vhal successfully");
+    if (m_is_concurrent_user)
+        return; //Update after receiving userId;
+
     for (int i = 0; i < MAX_NUM_SENSORS; i++) {
         m_mutex.lock();
-        sensor_device_send_config_msg(m_sensor_config_status + i, sizeof(sensor_config_msg_t));
+        sensor_device_send_config_msg(m_sensor_config_status + i, sizeof(sensor_config_msg_t), 0);
         m_mutex.unlock();
     }
 }

@@ -18,9 +18,14 @@
 #include "sock_utils.h"
 
 #define  SENSOR_SOCK_TYPE_PROP "ro.vendor.sensors.sock.type"
+#define  CONCURRENT_USER_PROP "ro.fw.concurrent.user"
 #define  SENSORS_SERVICE_NAME "sensors"
 #define  MAX_NUM_SENSORS 9
 #define  SUPPORTED_SENSORS  ((1<<MAX_NUM_SENSORS)-1)
+#define  GET_USERID(X) (10 + X)
+#define  AIC_SENSOR_HEADER_EVENT_SIZE 16
+#define  GET_ACTUAL_HANDLE(X) (X & 0xFF)
+#define  GET_USERID_FROM_HANDLE(X) ((X >> 8) & 0xFF)
 
 /**  SENSOR IDS AND NAMES **/
 #define  ID_BASE                        SENSORS_HANDLE_BASE
@@ -86,6 +91,7 @@ typedef struct _aic_sensors_event_t {
     int32_t   data_num;
     /* time is in nanosecond */
     int64_t   timestamp;
+    int32_t   userId;
     union
     {
         float   fdata[0];
@@ -131,6 +137,7 @@ private:
     int64_t m_time_start;
     int64_t m_time_offset;
     int64_t m_log_trace_count;
+    bool m_is_concurrent_user;
 
     sensors_event_t m_sensors[MAX_NUM_SENSORS];
     SockServer* m_socket_server;
@@ -146,7 +153,7 @@ private:
     int64_t now_ns(void);
     int get_type_from_hanle(int handle);
     int sensor_device_poll_event_locked();
-    int sensor_device_send_config_msg(const void* cmd, size_t len);
+    int sensor_device_send_config_msg(const void* cmd, size_t len, int32_t userId);
     int sensor_device_pick_pending_event_locked(sensors_event_t* event);
     void sensor_event_callback(SockServer* sock, sock_client_proxy_t* client);
     void client_connected_callback(SockServer* sock, sock_client_proxy_t* client);
