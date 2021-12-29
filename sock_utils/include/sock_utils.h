@@ -59,6 +59,7 @@ public:
     char* get_ip() { return m_ip; };
     int get_port() { return m_port; };
     sock_client_proxy_t* get_sock_client();
+    sock_client_proxy_t** get_connected_clients(){return m_clients;};
     void set_connection_check_timeout(int timeout_ms){ m_connection_timeout_ms = timeout_ms; }
     void set_client_status_check_timeouts(int timeout_ms){
         m_client_status_check_timeout = timeout_ms;

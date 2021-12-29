@@ -33,6 +33,7 @@ typedef struct _t_sock_server {
 
 typedef struct _t_sock_proxy_client {
     int id;
+    int32_t userId;
     std::vector<char> m_msg_buf;
 } sock_client_proxy_t;
 
