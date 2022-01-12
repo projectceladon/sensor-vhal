@@ -116,10 +116,13 @@ int64_t SensorDevice::now_ns(void) {
 
 int SensorDevice::sensor_device_send_config_msg(const void* cmd, size_t len) {
     sock_client_proxy_t* client = m_socket_server->get_sock_client();
+    sensor_config_msg_t *cfg = (sensor_config_msg_t *)cmd;
+    ALOGE("%s type: %d enabled %d sp %d\n", __func__, cfg->sensor_type, cfg->enabled, cfg->sample_period);
     if (!client) {
         ALOGE("sensor client has not connected, wait...");
         return 0;  // set 0 as success. or SensorService may crash
     }
+    ALOGE("1 %s type: %d enabled %d sp %d\n", __func__, cfg->sensor_type, cfg->enabled, cfg->sample_period);
     int ret = m_socket_server->send_data(client, cmd, len);
     if (ret < 0) {
         ret = -errno;
@@ -425,13 +428,11 @@ int SensorDevice::sensor_device_activate(int handle, int enabled) {
     m_sensor_config_status[handle].sensor_type = id;
     m_sensor_config_status[handle].enabled     = enabled;
     ALOGI("activate: sensor type=%d, enabled=%d, handle=%s(%d)", id, enabled, get_name_from_handle(handle), handle);
-    if (!enabled) {
-        int ret = sensor_device_send_config_msg(&m_sensor_config_status[handle], sizeof(sensor_config_msg_t));
-        if (ret < 0) {
-            ALOGE("could not send activate command: %s", strerror(-ret));
-            m_mutex.unlock();
-            return -errno;
-        }
+    int ret = sensor_device_send_config_msg(&m_sensor_config_status[handle], sizeof(sensor_config_msg_t));
+    if (ret < 0) {
+        ALOGE("could not send activate command: %s", strerror(-ret));
+        m_mutex.unlock();
+        return -errno;
     }
     m_mutex.unlock();
     return 0;
