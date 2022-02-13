@@ -522,6 +522,9 @@ int SensorDevice::sensor_device_set_delay(int handle, int64_t ns) {
 
 int SensorDevice::sensor_device_flush(int handle) {
     handle = GET_ACTUAL_HANDLE(handle);
+    if (handle >= MAX_NUM_SENSORS)
+        return 0;
+
     m_mutex.lock();
     if ((m_pending_sensors & (1U << handle)) && m_sensors[handle].type == SENSOR_TYPE_META_DATA) {
         (m_flush_count[handle])++;
