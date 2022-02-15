@@ -290,6 +290,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
 
         int handle = get_handle_from_type(sensor_type);
         sensor_data_count[handle]++;
+#ifdef DEBUF_SENSOR_DATA
         switch (sensor_type) {
             case SENSOR_TYPE_ACCELEROMETER:
             case SENSOR_TYPE_GYROSCOPE:
@@ -319,7 +320,7 @@ int SensorDevice::sensor_device_poll_event_locked() {
                 }
                 break;
         }
-
+#endif
         last_sensor_time[handle] = new_sensor_events_ptr->timestamp;
         break;
     }
@@ -425,14 +426,13 @@ int SensorDevice::sensor_device_activate(int handle, int enabled) {
     m_sensor_config_status[handle].sensor_type = id;
     m_sensor_config_status[handle].enabled     = enabled;
     ALOGI("activate: sensor type=%d, enabled=%d, handle=%s(%d)", id, enabled, get_name_from_handle(handle), handle);
-    if (!enabled) {
-        int ret = sensor_device_send_config_msg(&m_sensor_config_status[handle], sizeof(sensor_config_msg_t));
-        if (ret < 0) {
-            ALOGE("could not send activate command: %s", strerror(-ret));
-            m_mutex.unlock();
-            return -errno;
-        }
+    int ret = sensor_device_send_config_msg(&m_sensor_config_status[handle], sizeof(sensor_config_msg_t));
+    if (ret < 0) {
+        ALOGE("could not send activate command: %s", strerror(-ret));
+        m_mutex.unlock();
+        return -errno;
     }
+
     m_mutex.unlock();
     return 0;
 }
@@ -486,6 +486,9 @@ int SensorDevice::sensor_device_set_delay(int handle, int64_t ns) {
 }
 
 int SensorDevice::sensor_device_flush(int handle) {
+    if (handle >= sensor_device_flush)
+        return 0;
+
     m_mutex.lock();
     if ((m_pending_sensors & (1U << handle)) && m_sensors[handle].type == SENSOR_TYPE_META_DATA) {
         (m_flush_count[handle])++;
