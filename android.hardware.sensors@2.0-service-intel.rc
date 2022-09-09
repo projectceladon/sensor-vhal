@@ -1,0 +1,6 @@
+service vendor.sensors-hal-2-0-intel /system/vendor/bin/hw/android.hardware.sensors@2.0-service.intel
+    interface android.hardware.sensors@2.0::ISensors default
+    class hal
+    user system
+    group system
+    rlimit rtprio 10 10

@@ -1,5 +1,4 @@
 /*
- * Copyright (C) 2020 The Android Open Source Project
  * Copyright (C) 2022 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,26 +14,38 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_HARDWARE_SENSORS_V2_0_H
-#define ANDROID_HARDWARE_SENSORS_V2_0_H
+#ifndef SENSORS_VHAL_FACTORY_IMPL_H
+#define SENSORS_VHAL_FACTORY_IMPL_H
 
-#include "Sensors.h"
+#include <cutils/properties.h>
 
-#include <android/hardware/sensors/2.0/ISensors.h>
+#include "Sensor.h"
+#include "ConcurrentSensor.h"
 
 namespace android {
 namespace hardware {
 namespace sensors {
-namespace V2_0 {
+namespace V2_X {
 namespace implementation {
 
-struct SensorsV2_0 : public ::android::hardware::sensors::V2_X::implementation::Sensors<ISensors> {
+class SensorFactory {
+public:
+    static SensorsBase *getSensorInstance(ISensorsEventCallback* callback) {
+        if (property_get_bool(CONCURRENT_USER_PROP, false))
+            return new ConcurrentSensor(callback);
+        else
+            return new Sensor(callback);
+    }
+
+    SensorFactory() { }
+
+    ~SensorFactory() { }
 };
 
-}  // namespace implementation
-}  // namespace V2_0
-}  // namespace sensors
-}  // namespace hardware
-}  // namespace android
+}
+}
+}
+}
+}
 
-#endif  // ANDROID_HARDWARE_SENSORS_V2_0_H
+#endif // SENSORS_VHAL_FACTORY_IMPL_H

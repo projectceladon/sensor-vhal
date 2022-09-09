@@ -14,14 +14,21 @@
 // limitations under the License.
 
 cc_library_static {
-    name: "android.hardware.sensors@2.X-shared-impl",
+    name: "android.hardware.sensors@2.X-intel-shared-impl",
     vendor: true,
     export_include_dirs: ["."],
-    srcs: [
-        "Sensor.cpp",
+    cflags: ["-std=c++11"],
+    local_include_dirs: [
+        "include",
+        "include/impl",
+        "include/sock_utils"
     ],
-    header_libs: [
-        "android.hardware.sensors@2.X-shared-utils",
+    srcs: [
+        "src/Sensor.cpp",
+        "src/ConcurrentSensor.cpp",
+        "src/sock_utils/SockServer.cpp",
+        "src/sock_utils/SockUtils.cpp",
+        "src/CommDef.cpp"
     ],
     shared_libs: [
         "android.hardware.sensors@1.0",

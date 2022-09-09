@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2022 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,11 +15,8 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_HARDWARE_SENSORS_V2_X_SENSORS_H
-#define ANDROID_HARDWARE_SENSORS_V2_X_SENSORS_H
-
-#include "EventMessageQueueWrapper.h"
-#include "Sensor.h"
+#ifndef SENSORS_VHAL_SENSORS_H
+#define SENSORS_VHAL_SENSORS_H
 
 #include <android/hardware/sensors/2.0/ISensors.h>
 #include <android/hardware/sensors/2.0/types.h>
@@ -31,6 +29,9 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+
+#include "EventMessageQueueWrapper.h"
+#include "SensorFactoryImpl.h"
 
 namespace android {
 namespace hardware {
@@ -61,15 +62,7 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
           mReadWakeLockQueueRun(false),
           mAutoReleaseWakeLockTime(0),
           mHasWakeLock(false) {
-        AddSensor<AccelSensor>();
-        AddSensor<GyroSensor>();
-        AddSensor<AmbientTempSensor>();
-        AddSensor<DeviceTempSensor>();
-        AddSensor<PressureSensor>();
-        AddSensor<MagnetometerSensor>();
-        AddSensor<LightSensor>();
-        AddSensor<ProximitySensor>();
-        AddSensor<RelativeHumiditySensor>();
+        mSensors = SensorFactory::getSensorInstance(this);
     }
 
     virtual ~Sensors() {
@@ -80,12 +73,11 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
 
     // Methods from ::android::hardware::sensors::V2_0::ISensors follow.
     Return<void> getSensorsList(V2_0::ISensors::getSensorsList_cb _hidl_cb) override {
+        std::vector<V1_0::SensorInfo> mSensorsInfo = mSensors->getSensorInfo();
         std::vector<V1_0::SensorInfo> sensors;
-        for (const auto& sensor : mSensors) {
-            sensors.push_back(
-                    V2_1::implementation::convertToOldSensorInfo(sensor.second->getSensorInfo()));
+        for (const auto& sensor : mSensorsInfo) {
+            sensors.push_back(sensor);
         }
-
         // Call the HIDL callback with the SensorInfo
         _hidl_cb(sensors);
 
@@ -93,19 +85,13 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
     }
 
     Return<Result> setOperationMode(OperationMode mode) override {
-        for (auto sensor : mSensors) {
-            sensor.second->setOperationMode(mode);
-        }
+        mSensors->setOperationMode(mode);
         return Result::OK;
     }
 
     Return<Result> activate(int32_t sensorHandle, bool enabled) override {
-        auto sensor = mSensors.find(sensorHandle);
-        if (sensor != mSensors.end()) {
-            sensor->second->activate(enabled);
-            return Result::OK;
-        }
-        return Result::BAD_VALUE;
+        mSensors->activate(sensorHandle, enabled);
+        return Result::OK;
     }
 
     Return<Result> initialize(
@@ -126,8 +112,8 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
         Result result = Result::OK;
 
         // Ensure that all sensors are disabled
-        for (auto sensor : mSensors) {
-            sensor.second->activate(false /* enable */);
+        for (auto sensor : mSensorsInfo) {
+            mSensors->activate(sensor.sensorHandle, false /* enable */);
         }
 
         // Stop the Wake Lock thread if it is currently running
@@ -169,29 +155,18 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
 
     Return<Result> batch(int32_t sensorHandle, int64_t samplingPeriodNs,
                          int64_t /* maxReportLatencyNs */) override {
-        auto sensor = mSensors.find(sensorHandle);
-        if (sensor != mSensors.end()) {
-            sensor->second->batch(samplingPeriodNs);
-            return Result::OK;
-        }
-        return Result::BAD_VALUE;
+        mSensors->batch(sensorHandle, samplingPeriodNs);
+        return Result::OK;
     }
 
     Return<Result> flush(int32_t sensorHandle) override {
-        auto sensor = mSensors.find(sensorHandle);
-        if (sensor != mSensors.end()) {
-            return sensor->second->flush();
-        }
-        return Result::BAD_VALUE;
+        mSensors->flush(sensorHandle);
+        return Result::OK;
     }
 
     Return<Result> injectSensorData(const Event& event) override {
-        auto sensor = mSensors.find(event.sensorHandle);
-        if (sensor != mSensors.end()) {
-            return sensor->second->injectEvent(V2_1::implementation::convertToNewEvent(event));
-        }
-
-        return Result::BAD_VALUE;
+        mSensors->injectEvent(V2_1::implementation::convertToNewEvent(event));
+        return Result::OK;
     }
 
     Return<void> registerDirectChannel(const SharedMemInfo& /* mem */,
@@ -225,16 +200,6 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
     }
 
   protected:
-    /**
-     * Add a new sensor
-     */
-    template <class SensorType>
-    void AddSensor() {
-        std::shared_ptr<SensorType> sensor =
-                std::make_shared<SensorType>(mNextHandle++ /* sensorHandle */, this /* callback */);
-        mSensors[sensor->getSensorInfo().sensorHandle] = sensor;
-    }
-
     /**
      * Utility function to delete the Event Flag
      */
@@ -323,11 +288,6 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
     sp<ISensorsCallback> mCallback;
 
     /**
-     * A map of the available sensors
-     */
-    std::map<int32_t, std::shared_ptr<Sensor>> mSensors;
-
-    /**
      * The next available sensor handle
      */
     int32_t mNextHandle;
@@ -366,6 +326,16 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
      * Flag to indicate if a wake lock has been acquired
      */
     bool mHasWakeLock;
+
+    /**
+     * Sensors Base class instance
+     */
+    SensorsBase *mSensors;
+
+    /**
+     * Sensors info list
+     */
+    std::vector<V1_0::SensorInfo> mSensorsInfo;
 };
 
 }  // namespace implementation
@@ -374,4 +344,4 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
 }  // namespace hardware
 }  // namespace android
 
-#endif  // ANDROID_HARDWARE_SENSORS_V2_X_SENSORS_H
+#endif  // SENSORS_VHAL_SENSORS_H

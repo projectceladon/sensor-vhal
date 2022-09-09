@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2022 Intel Corportation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +15,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "android.hardware.sensors@2.0-service"
+#define LOG_TAG "sensors@2.0-service.intel"
 
 #include <android/hardware/sensors/2.0/ISensors.h>
 #include <hidl/HidlTransportSupport.h>
