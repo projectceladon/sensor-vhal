@@ -29,7 +29,10 @@
 #include "SockUtils.h"
 
 #define  MAX_NUM_USERS 8
-#define  GET_USERID(X) (10 + X)
+#define  USER0_ID 10
+#define  USER_ID_MAX (USER0_ID + MAX_NUM_USERS - 1)
+#define  GET_USERID(X) (USER0_ID + X)
+#define  GET_INDEX_OF_USERID(X) (X >= USER0_ID ? (X - USER0_ID) : X)
 #define  GET_ACTUAL_HANDLE(X) (X & 0xFF)
 #define  GET_USERID_FROM_HANDLE(X) ((X >> 8) & 0xFF)
 #define  CONCURRENT_USER_PROP "ro.fw.concurrent.user"

@@ -45,7 +45,11 @@ ConcurrentSensor::ConcurrentSensor(ISensorsEventCallback *callback) : mCallback(
     // Set status as disable to all sensors
     for (int userId = 0; userId < MAX_NUM_USERS; userId++) {
         for (int sensorIndex = 0; sensorIndex < MAX_NUM_SENSORS; sensorIndex++) {
+            sensorConfigMsg msg = {};
+            msg.sensorType = getTypeFromHandle(sensorIndex);
+            msg.enabled = false;
             mSensor[userId][sensorIndex].isEnabled = false;
+            mSensor[userId][sensorIndex].configMsg = msg;
         }
     }
 
@@ -86,10 +90,15 @@ void ConcurrentSensor::concurrentSensorEventCallback(SockServer *sock __unused,
     }
 
     if (eventHeader.sensorType == SENSOR_TYPE_ADDITIONAL_INFO) {
+        if ((eventHeader.userId < 0) || (eventHeader.userId >= MAX_NUM_USERS)) {
+            ALOGE("%s user-id(%d) received from client is not valid", __func__, client->userId);
+            return;
+        }
+
         client->userId = GET_USERID(eventHeader.userId);
         for (int i = 0; i < MAX_NUM_SENSORS; i++) {
             std::unique_lock<std::mutex> lck(mConfigMsgMutex);
-            sendConfigMsg(&mSensor[client->userId][i].configMsg, sizeof(sensorConfigMsg),
+            sendConfigMsg(&mSensor[eventHeader.userId][i].configMsg, sizeof(sensorConfigMsg),
                                                                         client->userId);
         }
         return;
@@ -118,43 +127,59 @@ void ConcurrentSensor::concurrentSensorEventCallback(SockServer *sock __unused,
 
 void ConcurrentSensor::batch(int32_t sensorHandle, int64_t samplingPeriodNs) {
     int userId = GET_USERID_FROM_HANDLE(sensorHandle);
-    sensorHandle = GET_ACTUAL_HANDLE(sensorHandle);
-    struct sensorInfo *sensor = &mSensor[sensorHandle][userId];
-    sensorConfigMsg msg = {};
+    if (userId < USER0_ID || userId > USER_ID_MAX) {
+        ALOGE("%s Concurrent-user won't support user-id: %d\n", __func__, userId);
+        return;
+    }
 
+    int uIndex = GET_INDEX_OF_USERID(userId);
+    sensorHandle = GET_ACTUAL_HANDLE(sensorHandle);
+    struct sensorInfo *sensor = &mSensor[uIndex][sensorHandle];
+    sensorConfigMsg msg = {};
     std::unique_lock<std::mutex> lck(mConfigMsgMutex);
-    sensor->configMsg = msg;
-    sensor->isEnabled = true;
-    sensor->samplingPeriodMs = ConvertNsToMs(samplingPeriodNs);
     msg.sensorType = getTypeFromHandle(sensorHandle);
     msg.enabled = true;
     // convert sampling period into milli seconds
     msg.samplingPeriodMs = ConvertNsToMs(samplingPeriodNs);
+    sensor->configMsg = msg;
+    sensor->isEnabled = true;
+    sensor->samplingPeriodMs = ConvertNsToMs(samplingPeriodNs);
     sendConfigMsg(&msg, sizeof(msg), userId);
 }
 
 void ConcurrentSensor::activate(int32_t sensorHandle, bool enable) {
     int userId = GET_USERID_FROM_HANDLE(sensorHandle);
+    if (userId < USER0_ID || userId > USER_ID_MAX) {
+        ALOGE("%s Concurrent-user won't support user-id: %d\n", __func__, userId);
+        return;
+    }
+
+    int uIndex = GET_INDEX_OF_USERID(userId);
     sensorHandle = GET_ACTUAL_HANDLE(sensorHandle);
-    struct sensorInfo *sensor = &mSensor[sensorHandle][userId];
+    struct sensorInfo *sensor = &mSensor[uIndex][sensorHandle];
     sensorConfigMsg msg = {};
 
     std::unique_lock<std::mutex> lck(mConfigMsgMutex);
-    sensor->configMsg = msg;
-    sensor->isEnabled = enable;
     msg.sensorType = getTypeFromHandle(sensorHandle);
     msg.enabled = enable;
-    // convert sampling period to milli seconds
     msg.samplingPeriodMs = sensor->samplingPeriodMs;
+    sensor->configMsg = msg;
+    sensor->isEnabled = enable;
     sendConfigMsg(&msg, sizeof(msg), userId);
 }
 
 Result ConcurrentSensor::flush(int32_t sensorHandle) {
     int userId = GET_USERID_FROM_HANDLE(sensorHandle);
+    if (userId < USER0_ID || userId > USER_ID_MAX) {
+        ALOGE("%s Concurrent-user won't support user-id: %d\n", __func__, userId);
+        return Result::BAD_VALUE;
+    }
+
+    int uIndex = GET_INDEX_OF_USERID(userId);
     sensorHandle = GET_ACTUAL_HANDLE(sensorHandle);
     // Only generate a flush complete event if the sensor is enabled and if the sensor is not a
     // one-shot sensor.
-    if (mSensor[sensorHandle][userId].isEnabled) {
+    if (mSensor[uIndex][sensorHandle].isEnabled) {
         return Result::BAD_VALUE;
     }
 
@@ -173,7 +198,7 @@ Event ConcurrentSensor::convertClientEvent(clientSensorEvent *cliEvent) {
     Event event;
     int32_t sensorHandle = getHandleFromType(cliEvent->header.sensorType);
     event.sensorHandle = (cliEvent->header.userId << 8) | sensorHandle;
-    event.sensorType =  Sensor2_1_Types[sensorHandle];
+    event.sensorType = Sensor2_1_Types[sensorHandle];
     event.timestamp = getEventTimeStamp();
     switch (cliEvent->header.sensorType) {
         case SENSOR_TYPE_ACCELEROMETER:
@@ -223,7 +248,7 @@ void ConcurrentSensor::run() {
                 {
                     mSensorMsgQueueReadyCV.wait(lock);
                 }
-	    }
+            }
 
             std::unique_lock<std::mutex> lock(mSensorMsgQueueMtx);
             cliEvent = std::move(mSensorMsgQueue.front());
