@@ -1,5 +1,5 @@
 #
-# Copyright 2016 Intel Corporation
+# Copyright (C) 2016-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+# SPDX-License-Identifier: Apache-2.0
 #
+
 ifeq ($(USE_SENSOR_SOCKET_UTILS), true)
 LOCAL_PATH := $(call my-dir)
 

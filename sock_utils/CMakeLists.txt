@@ -1,3 +1,7 @@
+# Copyright (C) 2019-2022 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+
 cmake_minimum_required( VERSION 2.6 )
 project(sock_util)
 

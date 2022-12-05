@@ -1,3 +1,9 @@
+/*
+ * Copyright (C) 2019-2022 Intel Corporation
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #ifndef _SENSORS_VHAL_H
 #define _SENSORS_VHAL_H
 #include <unistd.h>
