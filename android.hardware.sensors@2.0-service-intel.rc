@@ -1,3 +1,6 @@
+# Copyright (C) 2022 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 service vendor.sensors-hal-2-0-intel /system/vendor/bin/hw/android.hardware.sensors@2.0-service.intel
     interface android.hardware.sensors@2.0::ISensors default
     class hal
