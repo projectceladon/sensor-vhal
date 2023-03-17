@@ -114,7 +114,7 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
         Result result = Result::OK;
 
         // Ensure that all sensors are disabled
-        for (auto sensor : mSensorsInfo) {
+        for (auto& sensor : mSensorsInfo) {
             mSensors->activate(sensor.sensorHandle, false /* enable */);
         }
 

@@ -70,7 +70,7 @@ ConcurrentSensor::~ConcurrentSensor() {
 
 const std::vector<V1_0::SensorInfo> ConcurrentSensor::getSensorInfo() const {
     std::vector<V1_0::SensorInfo> sensors;
-    for (auto sensorInfo : info)
+    for (auto& sensorInfo : info)
         sensors.push_back(sensorInfo);
     return sensors;
 }
@@ -187,7 +187,7 @@ Result ConcurrentSensor::flush(int32_t sensorHandle) {
 
     // Note: If a sensor supports batching, write all of the currently batched events for the sensor
     // to the Event FMQ prior to writing the flush complete event.
-    Event ev;
+    Event ev{};
     ev.sensorHandle = sensorHandle;
     ev.sensorType = ::android::hardware::sensors::V2_1::SensorType::META_DATA;
     ev.u.meta.what = MetaDataEventType::META_DATA_FLUSH_COMPLETE;
@@ -197,8 +197,14 @@ Result ConcurrentSensor::flush(int32_t sensorHandle) {
 }
 
 Event ConcurrentSensor::convertClientEvent(clientSensorEvent *cliEvent) {
-    Event event;
+    Event event{};
     int32_t sensorHandle = getHandleFromType(cliEvent->header.sensorType);
+    if (sensorHandle < 0) {
+        ALOGW("%s Client Event has invalid sensor handle: %d", __func__, sensorHandle);
+        event.sensorHandle = -EINVAL;
+        return event;
+    }
+
     event.sensorHandle = (cliEvent->header.userId << 8) | sensorHandle;
     event.sensorType = Sensor2_1_Types[sensorHandle];
     event.timestamp = getEventTimeStamp();

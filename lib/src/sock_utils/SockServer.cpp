@@ -35,6 +35,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <mutex>
 #include <string>
 
 #include "SockServer.h"
@@ -44,6 +45,8 @@
 #else
 #define SOCK_SERVER_LOG(a)
 #endif
+
+std::mutex mtxObj;
 
 int sock_server_find_empty_slot(sock_server_t* server) {
     int id = 0;
@@ -98,35 +101,18 @@ sock_server_t* sock_server_init(int type, int port) {
             return NULL;
         }
 
-        if (SOCK_CONN_TYPE_INET_SOCK != type) {
-            struct sockaddr_un serv_addr;
-            memset(&serv_addr, 0, sizeof(serv_addr));
-            serv_addr.sun_family = AF_UNIX;
-
-            if (SOCK_CONN_TYPE_ABS_SOCK == type) {
-                serv_addr.sun_path[0] = 0; /* Make abstract */
-            } else {
-                unlink(SOCK_UTIL_DEFAULT_PATH);
-                strncpy(serv_addr.sun_path, SOCK_UTIL_DEFAULT_PATH, sizeof(serv_addr.sun_path) - 1);
-            }
-            sock_log("%s: %d : bind to %s", __func__, __LINE__, serv_addr.sun_path);
-            ret = bind(socketfd, (struct sockaddr*)&serv_addr, sizeof(struct sockaddr_un));
-        } else {
-            struct sockaddr_in serv_addr;
-            serv_addr.sin_family = AF_INET;
-            serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-            serv_addr.sin_port = htons(port);
-            ret = bind(socketfd, (struct sockaddr*)&serv_addr, sizeof(struct sockaddr_in));
-        }
+        struct sockaddr_in serv_addr;
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        serv_addr.sin_port = htons(port);
+        ret = bind(socketfd, (struct sockaddr*)&serv_addr, sizeof(struct sockaddr_in));
 
         if (ret < 0) {
             sock_log("sock error : bind server socket failed! error = %d(%s) \n", errno, strerror(errno));
             close(socketfd);
             return NULL;
         }
-    }
-
-    if (SOCK_CONN_TYPE_UNIX_SOCK == type) {
+    } else if (socket_domain == AF_UNIX) {
         char build_id_buf[PROPERTY_VALUE_MAX] = {'\0'};
         property_get("ro.boot.container.id", build_id_buf, "");
         std::string sock_path = "/ipc/sensors-socket";
@@ -137,18 +123,23 @@ sock_server_t* sock_server_init(int type, int port) {
         struct sockaddr_un addr_un;
         memset(&addr_un, 0, sizeof(addr_un));
         addr_un.sun_family = AF_UNIX;
-        strncpy(&addr_un.sun_path[0], SocketPath.c_str(), strlen(SocketPath.c_str()));
+        if (SocketPath.length() >= sizeof(addr_un.sun_path)) {
+            ALOGE("%s socket path is not valid", __func__);
+            close(socketfd);
+            return NULL;
+        }
+
+        strncpy(&addr_un.sun_path[0], SocketPath.c_str(), SocketPath.length());
 
         int ret = 0;
         ALOGI(" %s sensor socket server file is %s", __FUNCTION__, SocketPath.c_str());
-        if ((access(SocketPath.c_str(), F_OK)) != -1) {
-            ret = unlink(SocketPath.c_str());
-            if (ret < 0) {
-                ALOGE(" %s Failed to unlink %s address %d, %s", __FUNCTION__,
-                                    SocketPath.c_str(), ret, strerror(errno));
-                close(socketfd);
-                return NULL;
-            }
+
+        ret = unlink(SocketPath.c_str());
+        if (ret < 0 && errno != ENOENT) {
+            ALOGE(" %s Failed to unlink %s address %d, %s", __FUNCTION__,
+                            SocketPath.c_str(), ret, strerror(errno));
+            close(socketfd);
+            return NULL;
         }
 
         ret = ::bind(socketfd, (struct sockaddr *)&addr_un,
@@ -164,7 +155,13 @@ sock_server_t* sock_server_init(int type, int port) {
         if (fstat(socketfd, &st) == 0) {
             mod |= st.st_mode;
         }
-        chmod(SocketPath.c_str(), mod);
+        ret = chmod(SocketPath.c_str(), mod);
+        if (ret < 0) {
+            ALOGE("%s Failed to set permission for socket path %s", __FUNCTION__, SocketPath.c_str());
+            close(socketfd);
+            return NULL;
+        }
+
         ret = listen(socketfd, 5);
         if (ret < 0) {
             ALOGE("%s Failed to listen on %s", __FUNCTION__, SocketPath.c_str());
@@ -215,7 +212,11 @@ void sock_server_close(sock_server_t* server) {
         }
 
         if (SOCK_CONN_TYPE_UNIX_SOCK == server->type) {
-            unlink(server->path);
+            int ret = unlink(server->path);
+            if (ret < 0 && errno != ENOENT) {
+                ALOGE(" %s Failed to unlink %s address %d, %s", __FUNCTION__,
+                                        server->path, ret, strerror(errno));
+            }
         }
 
         delete server;

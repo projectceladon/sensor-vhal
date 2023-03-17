@@ -49,6 +49,10 @@ Sensor::Sensor(ISensorsEventCallback *callback) : mCallback(callback) {
         mMode[i] = OperationMode::NORMAL;
     }
     mRunThread = std::thread(startThread, this);
+    mIsClientConnected = false;
+    mPreviousEventSet = false;
+    memset(mPreviousEvent, 0, sizeof(mPreviousEvent));
+    memset(mSensor, 0, sizeof(mSensor));
 }
 
 Sensor::~Sensor() {
@@ -58,7 +62,7 @@ Sensor::~Sensor() {
 
 const std::vector<V1_0::SensorInfo> Sensor::getSensorInfo() const {
     std::vector<V1_0::SensorInfo> sensors;
-    for (auto sensorInfo : info)
+    for (auto& sensorInfo : info)
         sensors.push_back(sensorInfo);
     return sensors;
 }
@@ -68,9 +72,8 @@ void Sensor::clientConnectedCallback(SockServer *sock __unused,
     mIsClientConnected = true;
     ALOGI("%s client got connected", __func__);
     for (int i = 0; i < MAX_NUM_SENSORS; i++) {
-        mConfigMsgMutex.lock();
+        std::lock_guard<std::mutex> lock(mConfigMsgMutex);
         mSocketServer->sendConfigMsg(mSocketServer, &mSensor[i].configMsg, sizeof(mSensor[i].configMsg));
-        mConfigMsgMutex.unlock();
     }
 }
 
@@ -137,7 +140,7 @@ Result Sensor::flush(int32_t sensorHandle) {
 
     // Note: If a sensor supports batching, write all of the currently batched events for the sensor
     // to the Event FMQ prior to writing the flush complete event.
-    Event ev;
+    Event ev{};
     ev.sensorHandle = sensorHandle;
     ev.sensorType = ::android::hardware::sensors::V2_1::SensorType::META_DATA;
     ev.u.meta.what = MetaDataEventType::META_DATA_FLUSH_COMPLETE;
@@ -147,8 +150,12 @@ Result Sensor::flush(int32_t sensorHandle) {
 }
 
 Event Sensor::convertClientEvent(clientSensorEvent *cliEvent) {
-    Event event;
+    Event event{};
     event.sensorHandle = getHandleFromType(cliEvent->header.sensorType);
+    if (event.sensorHandle < 0) {
+        ALOGW("%s Invalid sensorHandle: %d for sensorType: %d", __func__, event.sensorHandle, cliEvent->header.sensorType);
+        return event;
+    }
     event.sensorType =  Sensor2_1_Types[event.sensorHandle];
     event.timestamp = getEventTimeStamp();
     switch (cliEvent->header.sensorType) {
@@ -180,7 +187,7 @@ Event Sensor::convertClientEvent(clientSensorEvent *cliEvent) {
             }
             break;
         default:
-        ALOGW("%s Client Event has invalid sensor type: %d", __func__, cliEvent->header.sensorType);	
+            ALOGW("%s Client Event has invalid sensor type: %d", __func__, cliEvent->header.sensorType);
     }
     return event;
     
@@ -206,6 +213,10 @@ void Sensor::run() {
             cliEvent = std::move(mSensorMsgQueue.front());
             mSensorMsgQueue.pop();
             Event event = convertClientEvent(&cliEvent);
+            if (event.sensorHandle < 0) {
+                ALOGE("%s Received invalid sensor handle(%d) from client", __func__, event.sensorHandle);
+                continue;
+            }
             mCallback->postEvents(std::vector<Event>{event}, isWakeUpSensor(event.sensorHandle));
         }
     }

@@ -51,6 +51,7 @@ SockServer::SockServer(int port, int sockType) {
 SockServer::~SockServer() {
     stop();
     join();
+
     sock_server_close(m_server);
     m_server = nullptr;
 
@@ -238,7 +239,8 @@ int SockServer::send_data(const sock_client_proxy_t* client,  const void* data, 
                         if((retry_count--) < 0) {
                             break;
                         } else {
-                            usleep(1000);
+                            if (usleep(1000) < 0)
+                                ALOGW("%s failed to add delay by usleep call", __func__);
                             continue;
                         }
                     } else {
@@ -257,7 +259,8 @@ int SockServer::send_data(const sock_client_proxy_t* client,  const void* data, 
                     p_src += ret;
                     total_size += ret;
                 } else if ((errno == EINTR) || (errno == EAGAIN) || (errno == EWOULDBLOCK)) {
-                    usleep(1000);
+                    if (usleep(1000) < 0)
+                        ALOGW("%s failed to add delay by usleep call", __func__);
                     continue;
                 } else {
                     ALOGE("socket error, errno[%d]:%s", errno, strerror(errno));
@@ -319,7 +322,8 @@ int SockServer::recv_data(const sock_client_proxy_t* client, void* data, int len
                     total_size += ret;
                 } else {
                     if ((errno == EINTR) || (errno == EAGAIN) || (errno)== EWOULDBLOCK) {
-                        usleep(1000);
+                        if (usleep(1000) < 0)
+                            ALOGW("%s failed to add delay by usleep call", __func__);
                         continue;
                     } else {
                         ALOGE("socket error: errno[%d]:%s, client fd: %d", errno, strerror(errno), m_server->client_slots[client->id]);
@@ -345,7 +349,8 @@ int SockServer::recv_data(const sock_client_proxy_t* client, void* data, int len
                         if ((retry_count--) < 0) {
                             break;
                         } else {
-                            usleep(1000);
+                            if (usleep(1000) < 0)
+                                ALOGW("%s failed to add delay by usleep call", __func__);
                             continue;
                         }
                     } else {
