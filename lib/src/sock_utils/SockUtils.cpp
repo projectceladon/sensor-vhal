@@ -16,6 +16,8 @@
 ** SPDX-License-Identifier: Apache-2.0
 */
 
+#define LOG_TAG "sensors@2.0-service.intel"
+
 #include <arpa/inet.h>
 #include <cutils/properties.h>
 #include <linux/netlink.h>
@@ -50,7 +52,11 @@ SockServer::SockServer(int port, int sockType) {
 
 SockServer::~SockServer() {
     stop();
-    join();
+    try {
+        join();
+    } catch (const std::exception& excp) {
+        ALOGE("%s Exception !!! %s", __func__, excp.what());
+    }
 
     sock_server_close(m_server);
     m_server = nullptr;

@@ -16,6 +16,8 @@
 ** SPDX-License-Identifier: Apache-2.0
 */
 
+#define LOG_TAG "sensors@2.0-service.intel"
+
 #include <arpa/inet.h>
 #include <cutils/properties.h>
 #include <log/log.h>

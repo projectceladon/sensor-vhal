@@ -45,4 +45,5 @@ cc_binary {
         "android.hardware.sensors@2.X-intel-shared-impl",
     ],
     vintf_fragments: ["android.hardware.sensors.intel@2.0.xml"],
+    cflags: ["-std=c++11", "-fexceptions"]
 }

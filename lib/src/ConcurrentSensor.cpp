@@ -16,6 +16,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define LOG_TAG "sensors@2.0-service.intel"
+
 #include <utils/SystemClock.h>
 
 #include <cmath>
@@ -65,7 +67,11 @@ ConcurrentSensor::ConcurrentSensor(ISensorsEventCallback *callback) : mCallback(
 
 ConcurrentSensor::~ConcurrentSensor() {
     mStopThread = true;
-    mRunThread.join();
+    try {
+        mRunThread.join();
+    } catch (const std::exception& excp) {
+        ALOGE("%s Exception !!! %s", __func__, excp.what());
+    }
 }
 
 const std::vector<V1_0::SensorInfo> ConcurrentSensor::getSensorInfo() const {
