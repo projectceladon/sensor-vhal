@@ -32,13 +32,16 @@ using android::hardware::sensors::V2_0::implementation::SensorsV2_0;
 
 int main(int /* argc */, char** /* argv */) {
     configureRpcThreadpool(1, true);
-
-    android::sp<ISensors> sensors = new SensorsV2_0();
-    if (sensors->registerAsService() != ::android::OK) {
-        ALOGE("Failed to register Sensors HAL instance");
+    try {
+        android::sp<ISensors> sensors = new SensorsV2_0();
+        if (sensors->registerAsService() != ::android::OK) {
+            ALOGE("Failed to register Sensors HAL instance");
+            return -1;
+        }
+        joinRpcThreadpool();
+    } catch (const std::exception& excp) {
+        ALOGE("%s Exception !!! %s", __func__, excp.what());
         return -1;
     }
-
-    joinRpcThreadpool();
     return 1;  // joinRpcThreadpool shouldn't exit
 }

@@ -70,7 +70,11 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
     virtual ~Sensors() {
         deleteEventFlag();
         mReadWakeLockQueueRun = false;
-        mWakeLockThread.join();
+        try {
+            mWakeLockThread.join();
+        } catch (const std::exception& excp) {
+            ALOGE("%s Exception !!! %s", __func__, excp.what());
+        }
     }
 
     // Methods from ::android::hardware::sensors::V2_0::ISensors follow.
